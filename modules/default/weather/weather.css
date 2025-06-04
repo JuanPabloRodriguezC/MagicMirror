@@ -4,6 +4,8 @@
   line-height: 65px;
   display: inline-block;
   transform: translate(0, -3px);
+  color: white;
+  font-weight: bold;
 }
 
 .weather .humidity-icon {
@@ -42,9 +44,11 @@
 }
 
 .weather tr.colored .min-temp {
-  color: #bcddff;
+  color: white;
+  font-weight: bold;
 }
 
 .weather tr.colored .max-temp {
-  color: #ff8e99;
+  color: white;
+  font-weight: bold;
 }

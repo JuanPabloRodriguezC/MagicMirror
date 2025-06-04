@@ -5,20 +5,28 @@
   padding-left: 0;
   padding-right: 10px;
   font-size: var(--font-size-small);
+  color: white;
+  font-weight: bold;
 }
 
 .calendar .symbol span {
   padding-top: 4px;
+  color: white;
+  font-weight: bold;
 }
 
 .calendar .title {
   padding-left: 0;
   padding-right: 0;
   vertical-align: top;
+  color: white;
+  font-weight: bold;
 }
 
 .calendar .time {
   padding-left: 30px;
   text-align: right;
   vertical-align: top;
+  color: white;
+  font-weight: bold;
 }

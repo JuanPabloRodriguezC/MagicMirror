@@ -1,3 +1,5 @@
 .module.updatenotification a.difflink {
   text-decoration: none;
+  color: white;
+  font-weight: bold;
 }

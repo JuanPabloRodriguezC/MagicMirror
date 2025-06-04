@@ -16,9 +16,13 @@ iframe.newsfeed-fullarticle {
 
 .newsfeed-list {
   list-style: none;
+  color: white;
+  font-weight: bold;
 }
 
 .newsfeed-list li {
   text-align: justify;
   margin-bottom: 0.5em;
+  color: white;
+  font-weight: bold;
 }
