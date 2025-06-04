@@ -5,12 +5,12 @@
   --color-background: #000;
   --font-primary: "Roboto Condensed";
   --font-secondary: "Roboto";
-  --font-size: 30px;
-  --font-size-xsmall: 1.125rem;
-  --font-size-small: 1.5rem;
-  --font-size-medium: 2.25rem;
-  --font-size-large: 4.875rem;
-  --font-size-xlarge: 5.625rem;
+  --font-size: 2.2rem;
+  --font-size-xsmall: 0.8rem;
+  --font-size-small: 1.2rem;
+  --font-size-medium: 2rem;
+  --font-size-large: 3rem;
+  --font-size-xlarge: 4rem;
   --gap-body-top: 60px;
   --gap-body-right: 60px;
   --gap-body-bottom: 60px;
