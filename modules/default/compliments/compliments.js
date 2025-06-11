@@ -249,7 +249,7 @@ Module.register("compliments", {
 	// Override dom generator.
 	getDom () {
 		const wrapper = document.createElement("div");
-		wrapper.className = this.config.classes ? this.config.classes : "thin xlarge bright pre-line";
+		wrapper.className = this.config.classes ? this.config.classes : "thin medium bright pre-line";
 		// get the compliment text
 		const complimentText = this.getRandomCompliment();
 		// split it into parts on newline text
