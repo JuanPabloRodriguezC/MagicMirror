@@ -1,0 +1,267 @@
+/* MMM-InfoMirror Styles */
+
+.MMM-InfoMirror {
+    font-family: 'Roboto', sans-serif;
+    color: white;
+    text-align: center;
+}
+
+/* Loading Screen */
+.MMM-InfoMirror .loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    font-size: 1.2em;
+    opacity: 0.8;
+}
+
+.MMM-InfoMirror .loading i {
+    font-size: 3em;
+    margin-bottom: 20px;
+    color: #00d4ff;
+}
+
+/* Main Content Container */
+.MMM-InfoMirror .content-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 30px;
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Time Display */
+.MMM-InfoMirror .time-display {
+    grid-column: 1 / -1;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.MMM-InfoMirror .time-display .time {
+    font-size: 4em;
+    font-weight: 300;
+    line-height: 1;
+    margin-bottom: 10px;
+    color: #ffffff;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.MMM-InfoMirror .time-display .date {
+    font-size: 1.5em;
+    font-weight: 300;
+    color: #cccccc;
+    text-transform: capitalize;
+}
+
+/* Weather Display */
+.MMM-InfoMirror .weather-display {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 25px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.MMM-InfoMirror .weather-display .weather-icon {
+    font-size: 3em;
+    color: #00d4ff;
+    min-width: 80px;
+}
+
+.MMM-InfoMirror .weather-display .weather-info {
+    flex: 1;
+    text-align: left;
+}
+
+.MMM-InfoMirror .weather-display .temperature {
+    font-size: 2.5em;
+    font-weight: 300;
+    line-height: 1;
+    margin-bottom: 5px;
+}
+
+.MMM-InfoMirror .weather-display .condition {
+    font-size: 1.2em;
+    margin-bottom: 10px;
+    text-transform: capitalize;
+}
+
+.MMM-InfoMirror .weather-display .details {
+    font-size: 0.9em;
+    color: #cccccc;
+}
+
+.MMM-InfoMirror .weather-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 40px;
+    color: #cccccc;
+}
+
+.MMM-InfoMirror .weather-loading i {
+    font-size: 2em;
+    opacity: 0.5;
+}
+
+/* Calendar Display */
+.MMM-InfoMirror .calendar-display {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 25px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.MMM-InfoMirror .calendar-display .calendar-header {
+    font-size: 1.3em;
+    font-weight: 500;
+    margin-bottom: 20px;
+    color: #00d4ff;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 10px;
+}
+
+.MMM-InfoMirror .calendar-display .calendar-event {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.MMM-InfoMirror .calendar-display .calendar-event:last-child {
+    border-bottom: none;
+}
+
+.MMM-InfoMirror .calendar-display .event-time {
+    font-size: 0.9em;
+    color: #00d4ff;
+    font-weight: 500;
+    min-width: 60px;
+}
+
+.MMM-InfoMirror .calendar-display .event-title {
+    flex: 1;
+    text-align: left;
+    margin-left: 15px;
+    font-size: 1em;
+}
+
+/* Compliments Display */
+.MMM-InfoMirror .compliments-display {
+    grid-column: 1 / -1;
+    text-align: center;
+    margin-top: 20px;
+}
+
+.MMM-InfoMirror .compliments-display .compliment {
+    font-size: 1.5em;
+    font-style: italic;
+    color: #00d4ff;
+    animation: fadeInOut 4s ease-in-out infinite;
+}
+
+/* Status Display (Debug Mode) */
+.MMM-InfoMirror .status-display {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #00ff00;
+    padding: 10px 15px;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 0.8em;
+    border: 1px solid #00ff00;
+}
+
+.MMM-InfoMirror .status-display .status-item {
+    margin: 3px 0;
+}
+
+/* Animations */
+@keyframes fadeInOut {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+
+.MMM-InfoMirror .content-container {
+    animation: fadeIn 1s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .MMM-InfoMirror .content-container {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .MMM-InfoMirror .time-display .time {
+        font-size: 3em;
+    }
+    
+    .MMM-InfoMirror .weather-display {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .MMM-InfoMirror .weather-display .weather-info {
+        text-align: center;
+    }
+}
+
+@media (max-width: 600px) {
+    .MMM-InfoMirror .time-display .time {
+        font-size: 2.5em;
+    }
+    
+    .MMM-InfoMirror .weather-display,
+    .MMM-InfoMirror .calendar-display {
+        padding: 15px;
+    }
+}
+
+/* Dark Theme Enhancements */
+.MMM-InfoMirror {
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.3) 100%);
+    border-radius: 20px;
+    padding: 20px;
+}
+
+/* LED Status Indicator */
+.MMM-InfoMirror .led-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #00ff00;
+    box-shadow: 0 0 10px #00ff00;
+    animation: pulse 2s infinite;
+}
+
+.MMM-InfoMirror .led-indicator.inactive {
+    background: #666;
+    box-shadow: none;
+    animation: none;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}

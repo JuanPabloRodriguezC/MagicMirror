@@ -57,7 +57,7 @@
 		"test:unit": "NODE_ENV=test jest --selectProjects unit"
 	},
 	"lint-staged": {
-		"*": "prettier --write",
+		"*.{js,json,md,css,html}": "prettier --write",
 		"*.js": "eslint --fix",
 		"*.css": "stylelint --fix"
 	},
