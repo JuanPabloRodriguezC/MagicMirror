@@ -1,0 +1,91 @@
+{
+	"name": "mmm-infomirror",
+	"version": "1.0.0",
+	"description": "Smart Mirror Module for InfoMirror Project - CE5507 (HC-SR04 & NeoPixel Version)",
+	"main": "mmm-infomirror.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1",
+		"install-deps": "sudo apt-get update && sudo apt-get install -y python3-dev python3-pip scons swig",
+		"postinstall": "echo 'Run: sudo npm install --unsafe-perm if installation fails'"
+	},
+	"keywords": [
+		"MagicMirror",
+		"InfoMirror",
+		"IoT",
+		"Raspberry Pi",
+		"Smart Mirror",
+		"HC-SR04",
+		"NeoPixel",
+		"Ultrasonic",
+		"LED Strip"
+	],
+	"author": "InfoMirror Team - CE5507",
+	"license": "MIT",
+	"dependencies": {
+		"express": "^4.18.2",
+		"cors": "^2.8.5",
+		"pigpio": "^3.3.1",
+		"rpi-ws281x-native": "^0.9.0",
+		"mcp-spi-adc": "^0.2.0"
+	},
+	"optionalDependencies": {
+		"pigpio": "^3.3.1",
+		"rpi-ws281x-native": "^0.9.0",
+		"mcp-spi-adc": "^0.2.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/your-team/mmm-infomirror"
+	},
+	"peerDependencies": {
+		"magicmirror": "^2.1.0"
+	},
+	"engines": {
+		"node": ">=14.0.0"
+	},
+	"os": [
+		"linux"
+	],
+	"cpu": [
+		"arm",
+		"arm64"
+	],
+	"installationNotes": {
+		"dependencies": {
+			"pigpio": "Requires pigpio daemon running: sudo systemctl enable pigpiod && sudo systemctl start pigpiod",
+			"rpi-ws281x-native": "Requires root privileges for GPIO access. Install with: sudo npm install --unsafe-perm",
+			"mcp-spi-adc": "Requires SPI enabled: sudo raspi-config -> Interfacing Options -> SPI -> Enable"
+		},
+		"systemRequirements": [
+			"Raspberry Pi with GPIO access",
+			"Node.js 14+ with npm",
+			"Python 3 development headers",
+			"SPI interface enabled",
+			"Pigpio daemon running"
+		]
+	},
+	"hardwareConfiguration": {
+		"HC-SR04": {
+			"triggerPin": 18,
+			"echoPin": 24,
+			"operatingVoltage": "5V",
+			"detectionRange": "2-400cm"
+		},
+		"NeoPixel": {
+			"dataPin": 12,
+			"powerRequirement": "5V external supply recommended for >10 LEDs",
+			"supportedTypes": [
+				"WS2812",
+				"WS2812B",
+				"WS2811",
+				"SK6812"
+			]
+		},
+		"MCP3008": {
+			"spiDevice": "/dev/spidev0.0",
+			"channels": 8,
+			"resolution": "10-bit",
+			"referenceVoltage": "3.3V"
+		}
+	}
+}
