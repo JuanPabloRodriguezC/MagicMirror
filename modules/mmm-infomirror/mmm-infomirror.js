@@ -1,5 +1,6 @@
 /* mmm-infomirror
- * Magic Mirror Module for InfoMirror Project
+ * Magic Mirror Module for InfoMirror Project - Display Interface Only
+ * Hardware handled independently by Arduino
  * MIT Licensed.
  */
 
@@ -12,14 +13,9 @@ Module.register("mmm-infomirror", {
         showCalendar: true,
         showCompliments: false,
         
-        // Hardware configuration
-        ledIntensity: 50,           // LED brightness (0-100)
-        motionTimeout: 30000,       // Motion timeout in ms (30 seconds)
-        motionSensitivity: 80,      // Motion sensor sensitivity (0-100)
-        
-        // Display states
-        displayEnabled: false,      // Current display state
-        hardwareReady: false,       // Hardware initialization status
+        // Display behavior
+        motionTimeout: 30000,       // Display timeout in ms (30 seconds) - for reference only
+        displayEnabled: true,       // Current display state (can be controlled via API)
         
         // Update intervals
         updateInterval: 60000,      // General update interval (1 minute)
@@ -30,6 +26,9 @@ Module.register("mmm-infomirror", {
         
         // Configuration server
         configPort: 3001,          // Port for configuration API
+        
+        // System status
+        systemReady: false,         // System initialization status
         
         // Debug mode
         debugMode: false
@@ -48,7 +47,7 @@ Module.register("mmm-infomirror", {
         this.calendarEvents = [];
         this.currentTime = new Date();
         
-        // Start hardware initialization
+        // Start system initialization (no hardware)
         this.sendSocketNotification("INIT_HARDWARE", {
             config: this.config,
             identifier: this.identifier
@@ -64,6 +63,7 @@ Module.register("mmm-infomirror", {
         this.scheduleUpdate();
         
         Log.info(`${this.name} started with config:`, this.config);
+        Log.info(`${this.name}: Hardware (LEDs, sensors) handled independently by Arduino`);
     },
 
     // Handle notifications from other modules
@@ -96,50 +96,11 @@ Module.register("mmm-infomirror", {
 
         switch (notification) {
             case "HARDWARE_READY":
-                this.config.hardwareReady = true;
+                // Actually means "system ready" now (no hardware involved)
+                this.config.systemReady = true;
                 this.loaded = true;
-                Log.info(`${this.name}: Hardware initialized successfully`);
+                Log.info(`${this.name}: System initialized successfully`);
                 this.updateDom(this.config.fadeSpeed);
-                break;
-
-            case "MOTION_DETECTED":
-                if (this.config.debugMode) {
-                    Log.info(`${this.name}: Motion detected`);
-                }
-                this.config.displayEnabled = true;
-                this.sendSocketNotification("UPDATE_LEDS", {
-                    enabled: true,
-                    intensity: this.config.ledIntensity,
-                    identifier: this.identifier
-                });
-                this.updateDom(this.config.fadeSpeed);
-                break;
-
-            case "MOTION_TIMEOUT":
-                if (this.config.debugMode) {
-                    Log.info(`${this.name}: Motion timeout - turning off display`);
-                }
-                this.config.displayEnabled = false;
-                this.sendSocketNotification("UPDATE_LEDS", {
-                    enabled: false,
-                    intensity: 0,
-                    identifier: this.identifier
-                });
-                this.updateDom(this.config.fadeSpeed);
-                break;
-
-            case "LIGHT_INTENSITY_CHANGED":
-                this.config.ledIntensity = payload.intensity;
-                if (this.config.displayEnabled) {
-                    this.sendSocketNotification("UPDATE_LEDS", {
-                        enabled: true,
-                        intensity: this.config.ledIntensity,
-                        identifier: this.identifier
-                    });
-                }
-                if (this.config.debugMode) {
-                    Log.info(`${this.name}: Light intensity changed to ${payload.intensity}%`);
-                }
                 break;
 
             case "CONFIG_UPDATED":
@@ -148,32 +109,50 @@ Module.register("mmm-infomirror", {
                 
                 Log.info(`${this.name}: Configuration updated`, payload.config);
                 
-                // Handle LED intensity changes
-                if (oldConfig.ledIntensity !== this.config.ledIntensity && this.config.displayEnabled) {
-                    this.sendSocketNotification("UPDATE_LEDS", {
-                        enabled: true,
-                        intensity: this.config.ledIntensity,
-                        identifier: this.identifier
-                    });
+                // Log any display-related changes
+                if (oldConfig.showWeather !== this.config.showWeather) {
+                    Log.info(`${this.name}: Weather display ${this.config.showWeather ? 'enabled' : 'disabled'}`);
                 }
                 
-                // Handle motion sensitivity changes
-                if (oldConfig.motionSensitivity !== this.config.motionSensitivity) {
-                    this.sendSocketNotification("UPDATE_MOTION_SENSITIVITY", {
-                        sensitivity: this.config.motionSensitivity,
-                        identifier: this.identifier
-                    });
+                if (oldConfig.showTime !== this.config.showTime) {
+                    Log.info(`${this.name}: Time display ${this.config.showTime ? 'enabled' : 'disabled'}`);
+                }
+                
+                if (oldConfig.showCalendar !== this.config.showCalendar) {
+                    Log.info(`${this.name}: Calendar display ${this.config.showCalendar ? 'enabled' : 'disabled'}`);
+                }
+                
+                if (oldConfig.showCompliments !== this.config.showCompliments) {
+                    Log.info(`${this.name}: Compliments display ${this.config.showCompliments ? 'enabled' : 'disabled'}`);
                 }
                 
                 this.updateDom(this.config.fadeSpeed);
                 break;
 
-            case "HARDWARE_ERROR":
-                Log.error(`${this.name}: Hardware error - ${payload.error}`);
+            case "DISPLAY_CONTROL":
+                // Allow external control of display visibility
+                this.config.displayEnabled = payload.enabled;
+                if (this.config.debugMode) {
+                    Log.info(`${this.name}: Display ${payload.enabled ? 'enabled' : 'disabled'} via API`);
+                }
+                this.updateDom(this.config.fadeSpeed);
+                break;
+
+            case "SYSTEM_ERROR":
+                Log.error(`${this.name}: System error - ${payload.error}`);
                 break;
 
             case "CONFIG_SERVER_STARTED":
                 Log.info(`${this.name}: Configuration server started on port ${payload.port}`);
+                Log.info(`${this.name}: Access configuration at http://PI_IP:${payload.port}`);
+                break;
+
+            case "PYTHON_APP_READY":
+                Log.info(`${this.name}: Python configuration app ready`);
+                break;
+
+            case "PYTHON_APP_STOPPED":
+                Log.info(`${this.name}: Python configuration app stopped`);
                 break;
 
             default:
@@ -188,20 +167,27 @@ Module.register("mmm-infomirror", {
         const wrapper = document.createElement("div");
         wrapper.className = "mmm-infomirror";
 
-        // If hardware not ready, show loading
+        // If system not ready, show loading
         if (!this.loaded) {
             wrapper.innerHTML = `
                 <div class="loading">
                     <i class="fa fa-cog fa-spin"></i>
                     <div>Initializing InfoMirror...</div>
+                    <small>Hardware controlled by Arduino independently</small>
                 </div>
             `;
             return wrapper;
         }
 
-        // If display is disabled (no motion), return empty div
+        // If display is disabled via API, return minimal display
         if (!this.config.displayEnabled) {
-            wrapper.style.display = "none";
+            wrapper.innerHTML = `
+                <div class="loading">
+                    <i class="fa fa-moon-o"></i>
+                    <div>Display Disabled</div>
+                    <small>Enable via configuration API</small>
+                </div>
+            `;
             return wrapper;
         }
 
@@ -226,7 +212,7 @@ Module.register("mmm-infomirror", {
             contentContainer.appendChild(this.createComplimentsDisplay());
         }
 
-        // Add hardware status indicator
+        // Add system status indicator in debug mode
         if (this.config.debugMode) {
             contentContainer.appendChild(this.createStatusDisplay());
         }
@@ -333,7 +319,10 @@ Module.register("mmm-infomirror", {
             "Have a wonderful day!",
             "You're amazing!",
             "Stay positive!",
-            "You've got this!"
+            "You've got this!",
+            "Ready to conquer the day!",
+            "You're unstoppable!",
+            "Believe in yourself!"
         ];
         
         const randomCompliment = compliments[Math.floor(Math.random() * compliments.length)];
@@ -348,9 +337,10 @@ Module.register("mmm-infomirror", {
         statusContainer.className = "status-display";
         
         statusContainer.innerHTML = `
-            <div class="status-item">Hardware: ${this.config.hardwareReady ? 'Ready' : 'Not Ready'}</div>
-            <div class="status-item">Motion: ${this.config.displayEnabled ? 'Active' : 'Inactive'}</div>
-            <div class="status-item">LED Intensity: ${this.config.ledIntensity}%</div>
+            <div class="status-item">System: ${this.config.systemReady ? 'Ready' : 'Not Ready'}</div>
+            <div class="status-item">Display: ${this.config.displayEnabled ? 'Active' : 'Disabled'}</div>
+            <div class="status-item">Config Port: ${this.config.configPort}</div>
+            <div class="status-item">Hardware: Arduino Independent</div>
         `;
         
         return statusContainer;
@@ -366,7 +356,9 @@ Module.register("mmm-infomirror", {
             'rain': 'wi-rain',
             'snow': 'wi-snow',
             'fog': 'wi-fog',
-            'wind': 'wi-windy'
+            'wind': 'wi-windy',
+            'thunderstorm': 'wi-thunderstorm',
+            'drizzle': 'wi-sprinkle'
         };
         
         return iconMap[condition.toLowerCase()] || 'wi-day-sunny';
@@ -376,10 +368,35 @@ Module.register("mmm-infomirror", {
     scheduleUpdate: function() {
         setInterval(() => {
             this.currentTime = new Date();
+            // Always update if display is enabled (no hardware motion dependency)
             if (this.config.displayEnabled) {
                 this.updateDom(this.config.fadeSpeed);
             }
         }, this.config.updateInterval);
+    },
+
+    // Force display update (can be called via notifications)
+    forceUpdate: function() {
+        this.currentTime = new Date();
+        this.updateDom(this.config.fadeSpeed);
+    },
+
+    // Get current module status (for API queries)
+    getModuleStatus: function() {
+        return {
+            loaded: this.loaded,
+            systemReady: this.config.systemReady,
+            displayEnabled: this.config.displayEnabled,
+            showWeather: this.config.showWeather,
+            showTime: this.config.showTime,
+            showCalendar: this.config.showCalendar,
+            showCompliments: this.config.showCompliments,
+            weatherDataAvailable: !!this.weatherData,
+            calendarEventsCount: this.calendarEvents.length,
+            lastUpdate: this.currentTime.toISOString(),
+            configPort: this.config.configPort,
+            debugMode: this.config.debugMode
+        };
     },
 
     // Get required stylesheets
