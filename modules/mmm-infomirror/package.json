@@ -22,20 +22,17 @@
 	"author": "InfoMirror Team - CE5507",
 	"license": "MIT",
 	"dependencies": {
-		"express": "^4.18.2",
 		"cors": "^2.8.5",
+		"express": "^4.21.2",
 		"pigpio": "^3.3.1",
-		"rpi-ws281x-native": "^0.9.0",
-		"mcp-spi-adc": "^0.2.0"
+		"rpi-ws281x-native": "^0.9.0"
 	},
 	"optionalDependencies": {
-		"pigpio": "^3.3.1",
-		"rpi-ws281x-native": "^0.9.0",
 		"mcp-spi-adc": "^0.2.0"
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/your-team/mmm-infomirror"
+		"url": "git+https://github.com/your-team/mmm-infomirror.git"
 	},
 	"peerDependencies": {
 		"magicmirror": "^2.1.0"
@@ -87,5 +84,12 @@
 			"resolution": "10-bit",
 			"referenceVoltage": "3.3V"
 		}
-	}
+	},
+	"directories": {
+		"lib": "lib"
+	},
+	"bugs": {
+		"url": "https://github.com/your-team/mmm-infomirror/issues"
+	},
+	"homepage": "https://github.com/your-team/mmm-infomirror#readme"
 }
