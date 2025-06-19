@@ -1,5 +1,6 @@
-/* mmm-infomirror Node Helper - HC-SR04 & NeoPixel Version
- * Hardware communication and configuration API server
+/* mmm-infomirror Node Helper - Simplified Python Communication Only
+ * Handles configuration API server and Python app communication
+ * Arduino handles all hardware directly
  * MIT Licensed.
  */
 
@@ -8,32 +9,29 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
-
-// Import hardware controllers
-const GPIOController = require("./lib/gpio_controller");
-const SensorManager = require("./lib/sensor_manager");
+const { spawn } = require("child_process");
 
 module.exports = NodeHelper.create({
     
     start: function() {
-        console.log(`Starting node helper for: ${this.name}`);
+        console.log(`Starting simplified node helper for: ${this.name}`);
         
         // Initialize components
         this.configServer = null;
-        this.gpioController = null;
-        this.sensorManager = null;
+        this.pythonProcess = null;
         this.moduleInstances = new Map(); // Track multiple module instances
         
-        // Hardware state
-        this.hardwareInitialized = false;
-        this.objectPresent = false;
-        this.currentDistance = 999;
-        this.currentLedIntensity = 0;
-        this.currentPotentiometerValue = 50;
+        // Application state
+        this.currentConfig = null;
+        this.pythonAppReady = false;
+        this.lastArduinoData = {};
         
         // Configuration file path
         this.configPath = path.join(__dirname, "config", "hardware_config.json");
         this.ensureConfigDirectory();
+        
+        // Load initial configuration
+        this.currentConfig = this.loadConfiguration();
     },
 
     // Handle socket notifications from module
@@ -42,31 +40,27 @@ module.exports = NodeHelper.create({
         
         switch (notification) {
             case "INIT_HARDWARE":
-                this.initializeHardware(payload.config, identifier);
+                this.initializeSystem(payload.config, identifier);
                 break;
                 
             case "START_CONFIG_SERVER":
                 this.startConfigurationServer(payload.port, identifier);
                 break;
                 
-            case "UPDATE_LEDS":
-                this.updateLEDs(payload);
+            case "START_PYTHON_APP":
+                this.startPythonApplication(payload);
                 break;
                 
-            case "UPDATE_DETECTION_DISTANCE":
-                this.updateDetectionDistance(payload);
+            case "SEND_CONFIG_TO_PYTHON":
+                this.sendConfigurationToPython(payload.config, identifier);
                 break;
                 
-            case "UPDATE_PRESENCE_TIMEOUT":
-                this.updatePresenceTimeout(payload);
+            case "REQUEST_ARDUINO_DATA":
+                this.requestArduinoData(identifier);
                 break;
                 
-            case "FORCE_PRESENCE_DETECTION":
-                this.forcePresenceDetection(identifier);
-                break;
-                
-            case "GET_HARDWARE_STATUS":
-                this.sendHardwareStatus(identifier);
+            case "GET_SYSTEM_STATUS":
+                this.sendSystemStatus(identifier);
                 break;
                 
             default:
@@ -74,131 +68,28 @@ module.exports = NodeHelper.create({
         }
     },
 
-    // Initialize hardware components
-    initializeHardware: function(config, identifier) {
-        console.log(`${this.name}: Initializing HC-SR04 & NeoPixel hardware for instance ${identifier}`);
+    // Initialize the system (no hardware, just communication)
+    initializeSystem: function(config, identifier) {
+        console.log(`${this.name}: Initializing system communication for instance ${identifier}`);
         
         try {
-            // Initialize GPIO controller with HC-SR04 and NeoPixel configuration
-            this.gpioController = new GPIOController({
-                ultrasonicTrigPin: 18,        // HC-SR04 Trigger
-                ultrasonicEchoPin: 24,        // HC-SR04 Echo
-                detectionDistance: 100,       // cm
-                neopixelPin: 12,              // NeoPixel data pin
-                neopixelCount: 30,            // Number of LEDs
-                neopixelType: 'ws2812',       // LED type
-                adcChannel: 0,                // MCP3008 channel for potentiometer
-                debugMode: config.debugMode
-            });
-
-            // Initialize sensor manager
-            this.sensorManager = new SensorManager({
-                detectionDistance: config.detectionDistance || 100,
-                presenceTimeout: config.motionTimeout || 30000, // Renamed from motionTimeout
-                distanceCheckInterval: 500,
-                potentiometerPollingInterval: 1000,
-                debugMode: config.debugMode
-            });
-
-            // Set up event listeners
-            this.setupEventListeners(identifier);
-
-            // Initialize hardware
-            this.gpioController.initialize()
-                .then(() => {
-                    this.sensorManager.initialize(this.gpioController);
-                    this.hardwareInitialized = true;
-                    
-                    console.log(`${this.name}: Hardware initialized successfully`);
-                    this.sendSocketNotification("HARDWARE_READY", { identifier: identifier });
-                })
-                .catch((error) => {
-                    console.error(`${this.name}: Hardware initialization failed:`, error);
-                    this.sendSocketNotification("HARDWARE_ERROR", { 
-                        error: error.message,
-                        identifier: identifier 
-                    });
-                });
-                
+            // Store the module configuration
+            this.moduleInstances.set(identifier, config);
+            
+            // Merge with current config
+            this.currentConfig = { ...this.currentConfig, ...config };
+            
+            // System is ready (no hardware to initialize)
+            console.log(`${this.name}: System communication initialized successfully`);
+            this.sendSocketNotification("HARDWARE_READY", { identifier: identifier });
+            
         } catch (error) {
-            console.error(`${this.name}: Failed to initialize hardware:`, error);
+            console.error(`${this.name}: System initialization failed:`, error);
             this.sendSocketNotification("HARDWARE_ERROR", { 
                 error: error.message,
                 identifier: identifier 
             });
         }
-    },
-
-    // Set up hardware event listeners
-    setupEventListeners: function(identifier) {
-        if (!this.sensorManager) return;
-
-        // Presence detection events (replaces motion detection)
-        this.sensorManager.on('presenceDetected', (data) => {
-            console.log(`${this.name}: Object detected at ${data.distance.toFixed(1)} cm`);
-            this.objectPresent = true;
-            this.currentDistance = data.distance;
-            this.sendSocketNotification("MOTION_DETECTED", { 
-                identifier: identifier,
-                distance: data.distance,
-                detectionDistance: data.detectionDistance
-            });
-        });
-
-        this.sensorManager.on('presenceTimeout', (data) => {
-            console.log(`${this.name}: Presence timeout - no object within detection range`);
-            this.objectPresent = false;
-            this.sendSocketNotification("MOTION_TIMEOUT", { identifier: identifier });
-        });
-
-        // Distance updates
-        this.sensorManager.on('distanceUpdate', (data) => {
-            this.currentDistance = data.smoothed;
-            
-            // Only emit significant changes to avoid spam
-            if (Math.abs(data.raw - data.smoothed) > 5) {
-                this.sendSocketNotification("DISTANCE_CHANGED", {
-                    identifier: identifier,
-                    rawDistance: data.raw,
-                    smoothedDistance: data.smoothed,
-                    withinRange: data.withinRange
-                });
-            }
-        });
-
-        // Potentiometer changes (replaces light intensity changes)
-        this.sensorManager.on('potentiometerChanged', (value) => {
-            this.currentPotentiometerValue = value;
-            this.sendSocketNotification("LIGHT_INTENSITY_CHANGED", { 
-                intensity: value,
-                identifier: identifier 
-            });
-        });
-
-        // Detection distance changes
-        this.sensorManager.on('detectionDistanceChanged', (distance) => {
-            this.sendSocketNotification("DETECTION_DISTANCE_CHANGED", {
-                distance: distance,
-                identifier: identifier
-            });
-        });
-
-        // Hardware errors
-        this.sensorManager.on('error', (error) => {
-            console.error(`${this.name}: Sensor manager error:`, error);
-            this.sendSocketNotification("HARDWARE_ERROR", { 
-                error: error.message,
-                identifier: identifier 
-            });
-        });
-
-        this.gpioController.on('error', (error) => {
-            console.error(`${this.name}: GPIO controller error:`, error);
-            this.sendSocketNotification("HARDWARE_ERROR", { 
-                error: error.message,
-                identifier: identifier 
-            });
-        });
     },
 
     // Start configuration API server
@@ -220,13 +111,14 @@ module.exports = NodeHelper.create({
         // Get current configuration
         app.get('/api/config', (req, res) => {
             try {
-                const config = this.loadConfiguration();
-                const hardwareStatus = this.getHardwareStatus();
+                const config = this.currentConfig;
+                const systemStatus = this.getSystemStatus();
                 
                 res.json({
                     success: true,
                     config: config,
-                    hardwareStatus: hardwareStatus
+                    systemStatus: systemStatus,
+                    timestamp: new Date().toISOString()
                 });
             } catch (error) {
                 res.status(500).json({
@@ -250,11 +142,16 @@ module.exports = NodeHelper.create({
                     });
                 }
 
-                // Save configuration
-                this.saveConfiguration(newConfig);
+                // Update current configuration
+                this.currentConfig = { ...this.currentConfig, ...newConfig };
 
-                // Apply hardware-specific changes
-                this.applyHardwareConfiguration(newConfig);
+                // Save configuration to file
+                this.saveConfiguration(this.currentConfig);
+
+                // Send to Python app if running
+                if (this.pythonAppReady) {
+                    this.sendConfigurationToPython(newConfig);
+                }
 
                 // Notify all module instances
                 for (let [instanceId, _] of this.moduleInstances) {
@@ -266,7 +163,8 @@ module.exports = NodeHelper.create({
 
                 res.json({
                     success: true,
-                    message: "Configuration updated successfully"
+                    message: "Configuration updated successfully",
+                    timestamp: new Date().toISOString()
                 });
 
             } catch (error) {
@@ -278,56 +176,95 @@ module.exports = NodeHelper.create({
             }
         });
 
-        // Get hardware status
+        // Get system status
         app.get('/api/status', (req, res) => {
             res.json({
                 success: true,
-                status: this.getHardwareStatus()
+                status: this.getSystemStatus(),
+                timestamp: new Date().toISOString()
             });
         });
 
-        // Test NeoPixel strip
-        app.post('/api/test-led', (req, res) => {
-            const { intensity = 50, duration = 3000 } = req.body;
-            
-            if (this.gpioController) {
-                this.gpioController.testLEDs(intensity, duration)
-                    .then(() => {
-                        res.json({ success: true, message: "NeoPixel test completed" });
-                    })
-                    .catch((error) => {
-                        res.status(500).json({ success: false, error: error.message });
-                    });
-            } else {
-                res.status(503).json({ success: false, error: "Hardware not initialized" });
+        // Get Arduino data
+        app.get('/api/arduino', (req, res) => {
+            res.json({
+                success: true,
+                data: this.lastArduinoData,
+                timestamp: new Date().toISOString()
+            });
+        });
+
+        // Send configuration to Python app
+        app.post('/api/send-to-python', (req, res) => {
+            try {
+                const success = this.sendConfigurationToPython(req.body);
+                res.json({
+                    success: success,
+                    message: success ? "Sent to Python app" : "Python app not ready"
+                });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
             }
         });
 
-        // Force presence detection (for testing)
-        app.post('/api/force-presence', (req, res) => {
-            if (this.sensorManager) {
-                this.sensorManager.forcePresenceDetection();
-                res.json({ success: true, message: "Presence detection forced" });
-            } else {
-                res.status(503).json({ success: false, error: "Sensor manager not initialized" });
-            }
-        });
-
-        // Get distance readings
-        app.get('/api/distance', (req, res) => {
-            if (this.gpioController) {
-                const status = this.gpioController.getStatus();
+        // Start Python application
+        app.post('/api/start-python', (req, res) => {
+            try {
+                const { scriptPath } = req.body;
+                this.startPythonApplication({ scriptPath });
                 res.json({
                     success: true,
-                    distance: {
-                        current: status.currentDistance,
-                        detectionThreshold: status.detectionDistance,
-                        objectDetected: status.objectDetected
-                    }
+                    message: "Python application start initiated"
                 });
-            } else {
-                res.status(503).json({ success: false, error: "Hardware not initialized" });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
             }
+        });
+
+        // Stop Python application
+        app.post('/api/stop-python', (req, res) => {
+            try {
+                this.stopPythonApplication();
+                res.json({
+                    success: true,
+                    message: "Python application stopped"
+                });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Serve a simple web interface
+        app.get('/', (req, res) => {
+            res.send(`
+                <html>
+                <head><title>InfoMirror Configuration</title></head>
+                <body>
+                    <h1>InfoMirror Configuration Server</h1>
+                    <p>Server running on port ${port}</p>
+                    <h2>API Endpoints:</h2>
+                    <ul>
+                        <li>GET /api/config - Get current configuration</li>
+                        <li>POST /api/config - Update configuration</li>
+                        <li>GET /api/status - Get system status</li>
+                        <li>GET /api/arduino - Get Arduino data</li>
+                        <li>POST /api/send-to-python - Send config to Python app</li>
+                        <li>POST /api/start-python - Start Python app</li>
+                        <li>POST /api/stop-python - Stop Python app</li>
+                    </ul>
+                    <p>Current time: ${new Date().toISOString()}</p>
+                </body>
+                </html>
+            `);
         });
 
         // Start server
@@ -340,100 +277,172 @@ module.exports = NodeHelper.create({
         });
     },
 
-    // Apply hardware-specific configuration changes
-    applyHardwareConfiguration: function(config) {
-        if (!this.sensorManager || !this.gpioController) return;
-
-        // Update detection distance
-        if (config.hasOwnProperty('detectionDistance')) {
-            this.sensorManager.setDetectionDistance(config.detectionDistance);
+    // Start Python application
+    startPythonApplication: function(payload) {
+        if (this.pythonProcess) {
+            console.log(`${this.name}: Python app already running`);
+            return;
         }
 
-        // Update presence timeout (was motionTimeout)
-        if (config.hasOwnProperty('motionTimeout')) {
-            this.sensorManager.setPresenceTimeout(config.motionTimeout);
-        }
+        const scriptPath = payload.scriptPath || path.join(__dirname, 'python_app.py');
+        
+        console.log(`${this.name}: Starting Python application: ${scriptPath}`);
 
-        // Update LED intensity if specified
-        if (config.hasOwnProperty('ledIntensity')) {
-            this.currentLedIntensity = config.ledIntensity;
-            if (this.objectPresent) {
-                this.gpioController.setLEDIntensity(config.ledIntensity);
-            }
+        try {
+            // Start Python process
+            this.pythonProcess = spawn('python3', [scriptPath], {
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+
+            // Handle Python output
+            this.pythonProcess.stdout.on('data', (data) => {
+                const output = data.toString().trim();
+                console.log(`Python: ${output}`);
+                
+                try {
+                    const message = JSON.parse(output);
+                    this.handlePythonMessage(message);
+                } catch (error) {
+                    // Not JSON, just log it
+                    if (output.includes('READY')) {
+                        this.pythonAppReady = true;
+                        this.sendSocketNotification("PYTHON_APP_READY", {});
+                    }
+                }
+            });
+
+            this.pythonProcess.stderr.on('data', (data) => {
+                console.error(`Python Error: ${data.toString()}`);
+            });
+
+            this.pythonProcess.on('close', (code) => {
+                console.log(`Python process exited with code ${code}`);
+                this.pythonAppReady = false;
+                this.pythonProcess = null;
+                this.sendSocketNotification("PYTHON_APP_STOPPED", { code });
+            });
+
+            this.pythonProcess.on('error', (error) => {
+                console.error(`Failed to start Python process: ${error}`);
+                this.pythonAppReady = false;
+                this.pythonProcess = null;
+                this.sendSocketNotification("PYTHON_APP_ERROR", { error: error.message });
+            });
+
+        } catch (error) {
+            console.error(`${this.name}: Failed to start Python app:`, error);
         }
     },
 
-    // Get comprehensive hardware status
-    getHardwareStatus: function() {
-        const gpioStatus = this.gpioController ? this.gpioController.getStatus() : {};
-        const sensorStatus = this.sensorManager ? this.sensorManager.getStatus() : {};
+    // Stop Python application
+    stopPythonApplication: function() {
+        if (this.pythonProcess) {
+            console.log(`${this.name}: Stopping Python application`);
+            this.pythonProcess.kill('SIGTERM');
+            this.pythonProcess = null;
+            this.pythonAppReady = false;
+        }
+    },
 
+    // Handle messages from Python app
+    handlePythonMessage: function(message) {
+        switch (message.type) {
+            case 'arduino_data':
+                this.lastArduinoData = message.data;
+                // Broadcast to all module instances
+                for (let [instanceId, _] of this.moduleInstances) {
+                    this.sendSocketNotification("ARDUINO_DATA_UPDATE", {
+                        data: message.data,
+                        identifier: instanceId
+                    });
+                }
+                break;
+
+            case 'status_update':
+                // Broadcast status updates
+                for (let [instanceId, _] of this.moduleInstances) {
+                    this.sendSocketNotification("PYTHON_STATUS_UPDATE", {
+                        status: message.data,
+                        identifier: instanceId
+                    });
+                }
+                break;
+
+            case 'error':
+                console.error('Python app error:', message.data);
+                break;
+
+            case 'ready':
+                this.pythonAppReady = true;
+                console.log(`${this.name}: Python app is ready`);
+                break;
+
+            default:
+                console.log(`${this.name}: Unknown Python message type: ${message.type}`);
+        }
+    },
+
+    // Send configuration to Python app
+    sendConfigurationToPython: function(config, identifier) {
+        if (!this.pythonProcess || !this.pythonAppReady) {
+            console.log(`${this.name}: Python app not ready, cannot send configuration`);
+            return false;
+        }
+
+        try {
+            const message = {
+                type: 'config_update',
+                data: config,
+                timestamp: new Date().toISOString()
+            };
+
+            this.pythonProcess.stdin.write(JSON.stringify(message) + '\n');
+            console.log(`${this.name}: Configuration sent to Python app`);
+            return true;
+
+        } catch (error) {
+            console.error(`${this.name}: Failed to send config to Python:`, error);
+            return false;
+        }
+    },
+
+    // Request Arduino data through Python app
+    requestArduinoData: function(identifier) {
+        if (!this.pythonProcess || !this.pythonAppReady) {
+            console.log(`${this.name}: Python app not ready, cannot request Arduino data`);
+            return;
+        }
+
+        try {
+            const message = {
+                type: 'request_arduino_data',
+                timestamp: new Date().toISOString()
+            };
+
+            this.pythonProcess.stdin.write(JSON.stringify(message) + '\n');
+
+        } catch (error) {
+            console.error(`${this.name}: Failed to request Arduino data:`, error);
+        }
+    },
+
+    // Get comprehensive system status
+    getSystemStatus: function() {
         return {
-            hardwareInitialized: this.hardwareInitialized,
-            objectPresent: this.objectPresent,
-            currentDistance: this.currentDistance,
-            detectionDistance: sensorStatus.detectionDistance || 100,
-            ledIntensity: this.currentLedIntensity,
-            potentiometerValue: this.currentPotentiometerValue,
-            presenceTimeout: sensorStatus.presenceTimeout || 30000,
-            timestamp: new Date().toISOString(),
-            gpio: gpioStatus,
-            sensor: sensorStatus
+            configServerRunning: !!this.configServer,
+            pythonAppReady: this.pythonAppReady,
+            pythonProcessRunning: !!this.pythonProcess,
+            moduleInstances: this.moduleInstances.size,
+            lastArduinoData: this.lastArduinoData,
+            currentConfig: this.currentConfig,
+            timestamp: new Date().toISOString()
         };
     },
 
-    // Update LED settings
-    updateLEDs: function(payload) {
-        if (!this.gpioController) {
-            console.error(`${this.name}: GPIO controller not initialized`);
-            return;
-        }
-
-        const { enabled, intensity } = payload;
-        
-        if (enabled) {
-            this.gpioController.setLEDIntensity(intensity);
-            this.currentLedIntensity = intensity;
-        } else {
-            this.gpioController.turnOffLEDs();
-            this.currentLedIntensity = 0;
-        }
-    },
-
-    // Update detection distance
-    updateDetectionDistance: function(payload) {
-        if (!this.sensorManager) {
-            console.error(`${this.name}: Sensor manager not initialized`);
-            return;
-        }
-
-        this.sensorManager.setDetectionDistance(payload.distance);
-    },
-
-    // Update presence timeout
-    updatePresenceTimeout: function(payload) {
-        if (!this.sensorManager) {
-            console.error(`${this.name}: Sensor manager not initialized`);
-            return;
-        }
-
-        this.sensorManager.setPresenceTimeout(payload.timeout);
-    },
-
-    // Force presence detection
-    forcePresenceDetection: function(identifier) {
-        if (!this.sensorManager) {
-            console.error(`${this.name}: Sensor manager not initialized`);
-            return;
-        }
-
-        this.sensorManager.forcePresenceDetection();
-    },
-
-    // Send hardware status
-    sendHardwareStatus: function(identifier) {
-        this.sendSocketNotification("HARDWARE_STATUS", {
-            status: this.getHardwareStatus(),
+    // Send system status
+    sendSystemStatus: function(identifier) {
+        this.sendSocketNotification("SYSTEM_STATUS", {
+            status: this.getSystemStatus(),
             identifier: identifier
         });
     },
@@ -456,17 +465,18 @@ module.exports = NodeHelper.create({
             console.error(`${this.name}: Error loading configuration:`, error);
         }
         
-        // Return default configuration for HC-SR04 setup
+        // Return default configuration
         return {
             showWeather: true,
             showTime: true,
             showCalendar: true,
             showCompliments: false,
             ledIntensity: 50,
-            motionTimeout: 30000,           // Presence timeout
-            detectionDistance: 100,         // Detection distance in cm
-            distanceSmoothing: true,
-            debugMode: false
+            motionTimeout: 30000,
+            detectionDistance: 100,
+            debugMode: false,
+            pythonAppPath: path.join(__dirname, 'python_app.py'),
+            arduinoPort: '/dev/ttyACM0'
         };
     },
 
@@ -523,17 +533,16 @@ module.exports = NodeHelper.create({
     stop: function() {
         console.log(`${this.name}: Stopping node helper`);
         
+        // Stop Python application
+        this.stopPythonApplication();
+        
+        // Close configuration server
         if (this.configServer) {
             this.configServer.close();
             this.configServer = null;
         }
         
-        if (this.sensorManager) {
-            this.sensorManager.cleanup();
-        }
-        
-        if (this.gpioController) {
-            this.gpioController.cleanup();
-        }
+        // Clear module instances
+        this.moduleInstances.clear();
     }
 });
