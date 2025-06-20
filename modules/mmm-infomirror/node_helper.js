@@ -14,27 +14,21 @@ const { spawn } = require("child_process");
 module.exports = NodeHelper.create({
     
     start: function() {
-        console.log(`Starting simplified node helper for: ${this.name}`);
+        console.log(`Starting node helper for: ${this.name}`);
         
-        // Initialize components
+        // Inicializa componentes
         this.configServer = null;
         this.pythonProcess = null;
-        this.moduleInstances = new Map(); // Track multiple module instances
-        
-        // Application state
+        this.moduleInstances = new Map();
         this.currentConfig = null;
         this.pythonAppReady = false;
         this.lastArduinoData = {};
-        
-        // Configuration file path
         this.configPath = path.join(__dirname, "config", "hardware_config.json");
         this.ensureConfigDirectory();
-        
-        // Load initial configuration
         this.currentConfig = this.loadConfiguration();
     },
 
-    // Handle socket notifications from module
+    // Maneja notificaciones del socket
     socketNotificationReceived: function(notification, payload) {
         const identifier = payload.identifier;
         
@@ -55,10 +49,6 @@ module.exports = NodeHelper.create({
                 this.sendConfigurationToPython(payload.config, identifier);
                 break;
                 
-            case "REQUEST_ARDUINO_DATA":
-                this.requestArduinoData(identifier);
-                break;
-                
             case "GET_SYSTEM_STATUS":
                 this.sendSystemStatus(identifier);
                 break;
@@ -68,18 +58,15 @@ module.exports = NodeHelper.create({
         }
     },
 
-    // Initialize the system (no hardware, just communication)
     initializeSystem: function(config, identifier) {
         console.log(`${this.name}: Initializing system communication for instance ${identifier}`);
         
         try {
-            // Store the module configuration
+            // Guarda la configuración del módulo
             this.moduleInstances.set(identifier, config);
             
-            // Merge with current config
+            // Agrega la configuración actual
             this.currentConfig = { ...this.currentConfig, ...config };
-            
-            // System is ready (no hardware to initialize)
             console.log(`${this.name}: System communication initialized successfully`);
             this.sendSocketNotification("HARDWARE_READY", { identifier: identifier });
             
@@ -92,7 +79,7 @@ module.exports = NodeHelper.create({
         }
     },
 
-    // Start configuration API server
+    // Inicia el servidor de configuración
     startConfigurationServer: function(port, identifier) {
         if (this.configServer) {
             console.log(`${this.name}: Configuration server already running`);
@@ -128,7 +115,7 @@ module.exports = NodeHelper.create({
             }
         });
 
-        // Update configuration
+        // Modifica configuración
         app.post('/api/config', (req, res) => {
             try {
                 const newConfig = req.body;
@@ -181,15 +168,6 @@ module.exports = NodeHelper.create({
             res.json({
                 success: true,
                 status: this.getSystemStatus(),
-                timestamp: new Date().toISOString()
-            });
-        });
-
-        // Get Arduino data
-        app.get('/api/arduino', (req, res) => {
-            res.json({
-                success: true,
-                data: this.lastArduinoData,
                 timestamp: new Date().toISOString()
             });
         });
@@ -277,7 +255,6 @@ module.exports = NodeHelper.create({
         });
     },
 
-    // Start Python application
     startPythonApplication: function(payload) {
         if (this.pythonProcess) {
             console.log(`${this.name}: Python app already running`);
@@ -403,26 +380,6 @@ module.exports = NodeHelper.create({
         } catch (error) {
             console.error(`${this.name}: Failed to send config to Python:`, error);
             return false;
-        }
-    },
-
-    // Request Arduino data through Python app
-    requestArduinoData: function(identifier) {
-        if (!this.pythonProcess || !this.pythonAppReady) {
-            console.log(`${this.name}: Python app not ready, cannot request Arduino data`);
-            return;
-        }
-
-        try {
-            const message = {
-                type: 'request_arduino_data',
-                timestamp: new Date().toISOString()
-            };
-
-            this.pythonProcess.stdin.write(JSON.stringify(message) + '\n');
-
-        } catch (error) {
-            console.error(`${this.name}: Failed to request Arduino data:`, error);
         }
     },
 

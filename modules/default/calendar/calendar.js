@@ -175,6 +175,71 @@ Module.register("calendar", {
 				this.sendSocketNotification(notification, { url: payload.url, id: this.identifier });
 			}
 		}
+
+		if (notification === "MODULE_VISIBILITY_REQUEST") {
+			// Check if this request is for this module
+			if (payload.module === this.name.toLowerCase()
+			  || payload.module === this.identifier
+			  || this.isModuleTargeted(payload.module)) {
+
+				// Apply visibility change
+				this.setModuleVisibility(!payload.hidden);
+
+				// Send confirmation back to InfoMirror controller
+				this.sendNotification("MODULE_VISIBILITY_CHANGED", {
+					module: this.name,
+					identifier: this.identifier,
+					hidden: payload.hidden,
+					sender: payload.sender
+				});
+
+				console.log(`Module ${this.name}: Visibility ${payload.hidden ? "hidden" : "shown"} by ${payload.sender}`);
+			}
+			// Call original notificationReceived if it exists
+			if (this.originalNotificationReceived) {
+				this.originalNotificationReceived.call(this, notification, payload, sender);
+			}
+		}
+	},
+	isModuleTargeted (targetModule) {
+		const moduleAliases = {
+			clock: ["clock", "time"],
+			weather: ["weather", "currentweather", "weatherforecast"],
+			calendar: ["calendar"],
+			compliments: ["compliments"],
+			newsfeed: ["newsfeed", "news"]
+		};
+
+		const moduleName = this.name.toLowerCase();
+
+		// Check direct match
+		if (moduleName === targetModule.toLowerCase()) {
+			return true;
+		}
+
+		// Check aliases
+		for (const [mainName, aliases] of Object.entries(moduleAliases)) {
+			if (aliases.includes(targetModule.toLowerCase()) && aliases.includes(moduleName)) {
+				return true;
+			}
+		}
+
+		return false;
+	},
+
+	// Function to actually show/hide the module
+	setModuleVisibility (visible) {
+		if (visible) {
+			this.show(1000, function () {
+				console.log(`Module ${this.name} is now visible`);
+			}.bind(this));
+			this.hidden = false;
+		} else {
+			this.hide(1000, function () {
+				console.log(`Module ${this.name} is now hidden`);
+			}.bind(this));
+			this.hidden = true;
+		}
 	},
 
 	// Override socket notification handler.

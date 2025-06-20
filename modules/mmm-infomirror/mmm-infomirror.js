@@ -1,5 +1,6 @@
 /* mmm-infomirror
- * Magic Mirror Module for InfoMirror Project - Display Interface Only
+ * Magic Mirror Module for InfoMirror Project - Controller Module
+ * Controls visibility and behavior of existing Magic Mirror modules
  * Hardware handled independently by Arduino
  * MIT Licensed.
  */
@@ -7,11 +8,12 @@
 Module.register("mmm-infomirror", {
     // Module defaults
     defaults: {
-        // Display configuration
+        // Module visibility control
         showWeather: true,
         showTime: true,
         showCalendar: true,
         showCompliments: false,
+        showNewsfeed: false,
         
         // Display behavior
         motionTimeout: 30000,       // Display timeout in ms (30 seconds) - for reference only
@@ -20,9 +22,8 @@ Module.register("mmm-infomirror", {
         // Update intervals
         updateInterval: 60000,      // General update interval (1 minute)
         
-        // Styling
+        // Module control settings
         fadeSpeed: 1000,           // Fade animation speed
-        fontSize: "medium",         // small, medium, large
         
         // Configuration server
         configPort: 3001,          // Port for configuration API
@@ -31,7 +32,16 @@ Module.register("mmm-infomirror", {
         systemReady: false,         // System initialization status
         
         // Debug mode
-        debugMode: false
+        debugMode: false,
+        
+        // Modules to control (mapping to their identifiers)
+        controlledModules: {
+            weather: ["weather", "currentweather", "weatherforecast"],
+            time: ["clock"],
+            calendar: ["calendar"],
+            compliments: ["compliments"],
+            newsfeed: ["newsfeed"]
+        }
     },
 
     // Required version
@@ -39,13 +49,11 @@ Module.register("mmm-infomirror", {
 
     // Start the module
     start: function() {
-        Log.info(`Starting module: ${this.name}`);
+        Log.info(`Starting InfoMirror controller module: ${this.name}`);
         
         // Initialize module state
         this.loaded = false;
-        this.weatherData = null;
-        this.calendarEvents = [];
-        this.currentTime = new Date();
+        this.moduleStates = new Map();
         
         // Start system initialization (no hardware)
         this.sendSocketNotification("INIT_HARDWARE", {
@@ -59,31 +67,22 @@ Module.register("mmm-infomirror", {
             identifier: this.identifier
         });
         
-        // Set up periodic updates
-        this.scheduleUpdate();
-        
         Log.info(`${this.name} started with config:`, this.config);
-        Log.info(`${this.name}: Hardware (LEDs, sensors) handled independently by Arduino`);
     },
 
     // Handle notifications from other modules
     notificationReceived: function(notification, payload, sender) {
-        if (notification === "WEATHER_DATA" && this.config.showWeather) {
-            this.weatherData = payload;
-            this.updateDom(this.config.fadeSpeed);
-        }
-        
-        if (notification === "CALENDAR_EVENTS" && this.config.showCalendar) {
-            this.calendarEvents = payload;
-            this.updateDom(this.config.fadeSpeed);
-        }
-        
-        if (notification === "CLOCK_SECOND" && this.config.showTime) {
-            this.currentTime = new Date();
-            // Only update DOM every minute to avoid excessive updates
-            if (this.currentTime.getSeconds() === 0) {
-                this.updateDom(this.config.fadeSpeed);
+        // Listen for module visibility confirmations
+        if (notification === "MODULE_VISIBILITY_CHANGED") {
+            if (this.config.debugMode) {
+                Log.info(`${this.name}: Module visibility changed:`, payload);
             }
+            this.moduleStates.set(payload.module, payload.hidden);
+        }
+        
+        // Handle display control notifications
+        if (notification === "INFOMIRROR_DISPLAY_CONTROL") {
+            this.handleDisplayControl(payload);
         }
     },
 
@@ -96,10 +95,12 @@ Module.register("mmm-infomirror", {
 
         switch (notification) {
             case "HARDWARE_READY":
-                // Actually means "system ready" now (no hardware involved)
                 this.config.systemReady = true;
                 this.loaded = true;
                 Log.info(`${this.name}: System initialized successfully`);
+                
+                // Apply initial module visibility
+                this.applyModuleVisibility();
                 this.updateDom(this.config.fadeSpeed);
                 break;
 
@@ -109,32 +110,19 @@ Module.register("mmm-infomirror", {
                 
                 Log.info(`${this.name}: Configuration updated`, payload.config);
                 
-                // Log any display-related changes
-                if (oldConfig.showWeather !== this.config.showWeather) {
-                    Log.info(`${this.name}: Weather display ${this.config.showWeather ? 'enabled' : 'disabled'}`);
-                }
-                
-                if (oldConfig.showTime !== this.config.showTime) {
-                    Log.info(`${this.name}: Time display ${this.config.showTime ? 'enabled' : 'disabled'}`);
-                }
-                
-                if (oldConfig.showCalendar !== this.config.showCalendar) {
-                    Log.info(`${this.name}: Calendar display ${this.config.showCalendar ? 'enabled' : 'disabled'}`);
-                }
-                
-                if (oldConfig.showCompliments !== this.config.showCompliments) {
-                    Log.info(`${this.name}: Compliments display ${this.config.showCompliments ? 'enabled' : 'disabled'}`);
-                }
-                
+                // Apply module visibility changes
+                this.handleConfigurationChange(oldConfig, this.config);
                 this.updateDom(this.config.fadeSpeed);
                 break;
 
             case "DISPLAY_CONTROL":
-                // Allow external control of display visibility
                 this.config.displayEnabled = payload.enabled;
                 if (this.config.debugMode) {
                     Log.info(`${this.name}: Display ${payload.enabled ? 'enabled' : 'disabled'} via API`);
                 }
+                
+                // Control all modules based on display state
+                this.controlAllModules(payload.enabled);
                 this.updateDom(this.config.fadeSpeed);
                 break;
 
@@ -162,223 +150,160 @@ Module.register("mmm-infomirror", {
         }
     },
 
-    // Generate DOM content
+    // Apply module visibility based on current configuration
+    applyModuleVisibility: function() {
+        const moduleVisibility = {
+            weather: this.config.showWeather,
+            time: this.config.showTime,
+            calendar: this.config.showCalendar,
+            compliments: this.config.showCompliments,
+            newsfeed: this.config.showNewsfeed
+        };
+
+        for (const [moduleType, shouldShow] of Object.entries(moduleVisibility)) {
+            this.controlModuleType(moduleType, shouldShow);
+        }
+    },
+
+    // Handle configuration changes and update module visibility
+    handleConfigurationChange: function(oldConfig, newConfig) {
+        const changes = [];
+
+        // Check each module type for changes
+        if (oldConfig.showWeather !== newConfig.showWeather) {
+            this.controlModuleType('weather', newConfig.showWeather);
+            changes.push(`Weather: ${newConfig.showWeather ? 'shown' : 'hidden'}`);
+        }
+
+        if (oldConfig.showTime !== newConfig.showTime) {
+            this.controlModuleType('time', newConfig.showTime);
+            changes.push(`Time: ${newConfig.showTime ? 'shown' : 'hidden'}`);
+        }
+
+        if (oldConfig.showCalendar !== newConfig.showCalendar) {
+            this.controlModuleType('calendar', newConfig.showCalendar);
+            changes.push(`Calendar: ${newConfig.showCalendar ? 'shown' : 'hidden'}`);
+        }
+
+        if (oldConfig.showCompliments !== newConfig.showCompliments) {
+            this.controlModuleType('compliments', newConfig.showCompliments);
+            changes.push(`Compliments: ${newConfig.showCompliments ? 'shown' : 'hidden'}`);
+        }
+
+        if (oldConfig.showNewsfeed !== newConfig.showNewsfeed) {
+            this.controlModuleType('newsfeed', newConfig.showNewsfeed);
+            changes.push(`Newsfeed: ${newConfig.showNewsfeed ? 'shown' : 'hidden'}`);
+        }
+
+        if (changes.length > 0) {
+            Log.info(`${this.name}: Module visibility changes: ${changes.join(', ')}`);
+        }
+    },
+
+    // Control specific module type visibility
+    controlModuleType: function(moduleType, shouldShow) {
+        const moduleNames = this.config.controlledModules[moduleType];
+        if (!moduleNames) {
+            Log.warn(`${this.name}: Unknown module type: ${moduleType}`);
+            return;
+        }
+
+        moduleNames.forEach(moduleName => {
+            this.sendNotification("MODULE_VISIBILITY_REQUEST", {
+                module: moduleName,
+                hidden: !shouldShow,
+                sender: this.name
+            });
+        });
+
+        if (this.config.debugMode) {
+            Log.info(`${this.name}: ${moduleType} modules ${shouldShow ? 'shown' : 'hidden'}: ${moduleNames.join(', ')}`);
+        }
+    },
+
+    // Control all modules (for display on/off)
+    controlAllModules: function(enable) {
+        const allModuleTypes = Object.keys(this.config.controlledModules);
+        
+        allModuleTypes.forEach(moduleType => {
+            const shouldShow = enable && this.config[`show${moduleType.charAt(0).toUpperCase() + moduleType.slice(1)}`];
+            this.controlModuleType(moduleType, shouldShow);
+        });
+
+        Log.info(`${this.name}: All controlled modules ${enable ? 'enabled' : 'disabled'}`);
+    },
+
+    // Handle display control requests
+    handleDisplayControl: function(payload) {
+        if (payload.action === 'enable') {
+            this.config.displayEnabled = true;
+            this.controlAllModules(true);
+        } else if (payload.action === 'disable') {
+            this.config.displayEnabled = false;
+            this.controlAllModules(false);
+        } else if (payload.action === 'toggle') {
+            this.config.displayEnabled = !this.config.displayEnabled;
+            this.controlAllModules(this.config.displayEnabled);
+        }
+
+        Log.info(`${this.name}: Display control - ${payload.action}, enabled: ${this.config.displayEnabled}`);
+    },
+
+    // Generate DOM content (minimal - just status display)
     getDom: function() {
         const wrapper = document.createElement("div");
-        wrapper.className = "mmm-infomirror";
+        wrapper.className = "mmm-infomirror-controller";
 
         // If system not ready, show loading
         if (!this.loaded) {
             wrapper.innerHTML = `
-                <div class="loading">
+                <div class="infomirror-status loading">
                     <i class="fa fa-cog fa-spin"></i>
-                    <div>Initializing InfoMirror...</div>
-                    <small>Hardware controlled by Arduino independently</small>
+                    <div>Initializing InfoMirror Controller...</div>
+                    <small>Preparing module communication</small>
                 </div>
             `;
             return wrapper;
         }
 
-        // If display is disabled via API, return minimal display
-        if (!this.config.displayEnabled) {
-            wrapper.innerHTML = `
-                <div class="loading">
-                    <i class="fa fa-moon-o"></i>
-                    <div>Display Disabled</div>
-                    <small>Enable via configuration API</small>
-                </div>
-            `;
-            return wrapper;
-        }
-
-        // Create main content container
-        const contentContainer = document.createElement("div");
-        contentContainer.className = "content-container";
-
-        // Add components based on configuration
-        if (this.config.showTime) {
-            contentContainer.appendChild(this.createTimeDisplay());
-        }
-
-        if (this.config.showWeather && this.weatherData) {
-            contentContainer.appendChild(this.createWeatherDisplay());
-        }
-
-        if (this.config.showCalendar && this.calendarEvents.length > 0) {
-            contentContainer.appendChild(this.createCalendarDisplay());
-        }
-
-        if (this.config.showCompliments) {
-            contentContainer.appendChild(this.createComplimentsDisplay());
-        }
-
-        // Add system status indicator in debug mode
+        // Show minimal status in debug mode only
         if (this.config.debugMode) {
-            contentContainer.appendChild(this.createStatusDisplay());
-        }
-
-        wrapper.appendChild(contentContainer);
-        return wrapper;
-    },
-
-    // Create time display component
-    createTimeDisplay: function() {
-        const timeContainer = document.createElement("div");
-        timeContainer.className = "time-display";
-        
-        const time = this.currentTime.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-        });
-        
-        const date = this.currentTime.toLocaleDateString([], {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-
-        timeContainer.innerHTML = `
-            <div class="time">${time}</div>
-            <div class="date">${date}</div>
-        `;
-
-        return timeContainer;
-    },
-
-    // Create weather display component
-    createWeatherDisplay: function() {
-        const weatherContainer = document.createElement("div");
-        weatherContainer.className = "weather-display";
-        
-        if (this.weatherData && this.weatherData.current) {
-            const current = this.weatherData.current;
-            weatherContainer.innerHTML = `
-                <div class="weather-icon">
-                    <i class="wi ${this.getWeatherIcon(current.condition)}"></i>
-                </div>
-                <div class="weather-info">
-                    <div class="temperature">${Math.round(current.temperature)}°</div>
-                    <div class="condition">${current.condition}</div>
-                    <div class="details">
-                        Humidity: ${current.humidity}% | Wind: ${current.windSpeed} km/h
+            wrapper.innerHTML = `
+                <div class="infomirror-status debug">
+                    <div class="status-header">InfoMirror Controller</div>
+                    <div class="status-items">
+                        <div class="status-item ${this.config.systemReady ? 'ready' : 'not-ready'}">
+                            System: ${this.config.systemReady ? 'Ready' : 'Not Ready'}
+                        </div>
+                        <div class="status-item ${this.config.displayEnabled ? 'enabled' : 'disabled'}">
+                            Display: ${this.config.displayEnabled ? 'Active' : 'Disabled'}
+                        </div>
+                        <div class="status-item">
+                            Config Port: ${this.config.configPort}
+                        </div>
+                        <div class="status-item">
+                            Controlled Modules: Weather(${this.config.showWeather}), 
+                            Time(${this.config.showTime}), 
+                            Calendar(${this.config.showCalendar}), 
+                            Compliments(${this.config.showCompliments}), 
+                            News(${this.config.showNewsfeed})
+                        </div>
                     </div>
                 </div>
             `;
         } else {
-            weatherContainer.innerHTML = `
-                <div class="weather-loading">
-                    <i class="fa fa-cloud"></i>
-                    <div>Loading weather...</div>
-                </div>
-            `;
+            // In production mode, show nothing (invisible controller)
+            wrapper.style.display = 'none';
         }
 
-        return weatherContainer;
+        return wrapper;
     },
 
-    // Create calendar display component
-    createCalendarDisplay: function() {
-        const calendarContainer = document.createElement("div");
-        calendarContainer.className = "calendar-display";
-        
-        const upcomingEvents = this.calendarEvents.slice(0, 3); // Show max 3 events
-        
-        if (upcomingEvents.length > 0) {
-            let eventsHTML = '<div class="calendar-header">Upcoming Events</div>';
-            
-            upcomingEvents.forEach(event => {
-                const eventDate = new Date(event.startDate);
-                const timeStr = eventDate.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-                
-                eventsHTML += `
-                    <div class="calendar-event">
-                        <div class="event-time">${timeStr}</div>
-                        <div class="event-title">${event.title}</div>
-                    </div>
-                `;
-            });
-            
-            calendarContainer.innerHTML = eventsHTML;
+    // Force apply current configuration (can be called via notifications)
+    forceApplyConfiguration: function() {
+        if (this.loaded) {
+            this.applyModuleVisibility();
         }
-
-        return calendarContainer;
-    },
-
-    // Create compliments display component
-    createComplimentsDisplay: function() {
-        const complimentsContainer = document.createElement("div");
-        complimentsContainer.className = "compliments-display";
-        
-        const compliments = [
-            "You look great today!",
-            "Have a wonderful day!",
-            "You're amazing!",
-            "Stay positive!",
-            "You've got this!",
-            "Ready to conquer the day!",
-            "You're unstoppable!",
-            "Believe in yourself!"
-        ];
-        
-        const randomCompliment = compliments[Math.floor(Math.random() * compliments.length)];
-        complimentsContainer.innerHTML = `<div class="compliment">${randomCompliment}</div>`;
-        
-        return complimentsContainer;
-    },
-
-    // Create status display for debugging
-    createStatusDisplay: function() {
-        const statusContainer = document.createElement("div");
-        statusContainer.className = "status-display";
-        
-        statusContainer.innerHTML = `
-            <div class="status-item">System: ${this.config.systemReady ? 'Ready' : 'Not Ready'}</div>
-            <div class="status-item">Display: ${this.config.displayEnabled ? 'Active' : 'Disabled'}</div>
-            <div class="status-item">Config Port: ${this.config.configPort}</div>
-            <div class="status-item">Hardware: Arduino Independent</div>
-        `;
-        
-        return statusContainer;
-    },
-
-    // Get weather icon class
-    getWeatherIcon: function(condition) {
-        const iconMap = {
-            'clear': 'wi-day-sunny',
-            'sunny': 'wi-day-sunny',
-            'cloudy': 'wi-cloudy',
-            'partly-cloudy': 'wi-day-cloudy',
-            'rain': 'wi-rain',
-            'snow': 'wi-snow',
-            'fog': 'wi-fog',
-            'wind': 'wi-windy',
-            'thunderstorm': 'wi-thunderstorm',
-            'drizzle': 'wi-sprinkle'
-        };
-        
-        return iconMap[condition.toLowerCase()] || 'wi-day-sunny';
-    },
-
-    // Schedule periodic updates
-    scheduleUpdate: function() {
-        setInterval(() => {
-            this.currentTime = new Date();
-            // Always update if display is enabled (no hardware motion dependency)
-            if (this.config.displayEnabled) {
-                this.updateDom(this.config.fadeSpeed);
-            }
-        }, this.config.updateInterval);
-    },
-
-    // Force display update (can be called via notifications)
-    forceUpdate: function() {
-        this.currentTime = new Date();
-        this.updateDom(this.config.fadeSpeed);
     },
 
     // Get current module status (for API queries)
@@ -387,25 +312,40 @@ Module.register("mmm-infomirror", {
             loaded: this.loaded,
             systemReady: this.config.systemReady,
             displayEnabled: this.config.displayEnabled,
-            showWeather: this.config.showWeather,
-            showTime: this.config.showTime,
-            showCalendar: this.config.showCalendar,
-            showCompliments: this.config.showCompliments,
-            weatherDataAvailable: !!this.weatherData,
-            calendarEventsCount: this.calendarEvents.length,
-            lastUpdate: this.currentTime.toISOString(),
+            moduleVisibility: {
+                weather: this.config.showWeather,
+                time: this.config.showTime,
+                calendar: this.config.showCalendar,
+                compliments: this.config.showCompliments,
+                newsfeed: this.config.showNewsfeed
+            },
+            controlledModules: this.config.controlledModules,
+            moduleStates: Object.fromEntries(this.moduleStates),
             configPort: this.config.configPort,
-            debugMode: this.config.debugMode
+            debugMode: this.config.debugMode,
+            lastUpdate: new Date().toISOString()
         };
     },
 
+    // Public methods that can be called by other modules
+    showWeather: function() { this.controlModuleType('weather', true); },
+    hideWeather: function() { this.controlModuleType('weather', false); },
+    showTime: function() { this.controlModuleType('time', true); },
+    hideTime: function() { this.controlModuleType('time', false); },
+    showCalendar: function() { this.controlModuleType('calendar', true); },
+    hideCalendar: function() { this.controlModuleType('calendar', false); },
+    showCompliments: function() { this.controlModuleType('compliments', true); },
+    hideCompliments: function() { this.controlModuleType('compliments', false); },
+    showNewsfeed: function() { this.controlModuleType('newsfeed', true); },
+    hideNewsfeed: function() { this.controlModuleType('newsfeed', false); },
+
+    enableDisplay: function() { this.handleDisplayControl({action: 'enable'}); },
+    disableDisplay: function() { this.handleDisplayControl({action: 'disable'}); },
+    toggleDisplay: function() { this.handleDisplayControl({action: 'toggle'}); },
+
     // Get required stylesheets
     getStyles: function() {
-        return [
-            "mmm-infomirror.css",
-            "font-awesome.css",
-            "weather-icons.css"
-        ];
+        return ["mmm-infomirror.css"];
     },
 
     // Get required scripts
